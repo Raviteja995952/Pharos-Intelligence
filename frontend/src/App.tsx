@@ -4,9 +4,11 @@ import { SearchBox } from './components/SearchBox';
 import { RiskReportCard } from './components/RiskReportCard';
 import { CompareReportCard } from './components/CompareReportCard';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
 // Mock API function to simulate backend interaction
 const analyzeEntity = async (query: string, type: string, isCompare: boolean = false, secondaryQuery?: string) => {
-  const endpoint = isCompare ? `http://localhost:3001/analyze/compare` : `http://localhost:3001/analyze/${type}`;
+  const endpoint = isCompare ? `${API_BASE_URL}/analyze/compare` : `${API_BASE_URL}/analyze/${type}`;
   const body = isCompare 
     ? { address1: query, address2: secondaryQuery, type }
     : type === 'transaction' ? { hash: query } : { address: query };
