@@ -1,5 +1,5 @@
-import { ShieldCheck, Activity, ShieldAlert, GitCompare, Crown, Check, AlertTriangle } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
+import { GitCompare, Crown, Check, AlertTriangle } from 'lucide-react';
+import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 
 interface CompareReportCardProps {

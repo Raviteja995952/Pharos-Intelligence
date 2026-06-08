@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShieldAlert, ShieldCheck, Activity, BrainCircuit, ExternalLink, Network, Database, ChevronDown, ChevronUp, AlertTriangle, TrendingUp, TrendingDown, Minus, Download, Share2, Copy } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, Activity, BrainCircuit, ExternalLink, Network, Database, ChevronDown, ChevronUp, AlertTriangle, TrendingUp, TrendingDown, Minus, Download, Share2 } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip, XAxis } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card';
 import { Badge } from './ui/badge';

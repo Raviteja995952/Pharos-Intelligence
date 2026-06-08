@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, Search, Shield, GitCompare, PlaySquare } from 'lucide-react';
+import { Activity, GitCompare } from 'lucide-react';
 import { SearchBox } from './components/SearchBox';
 import { RiskReportCard } from './components/RiskReportCard';
 import { CompareReportCard } from './components/CompareReportCard';
