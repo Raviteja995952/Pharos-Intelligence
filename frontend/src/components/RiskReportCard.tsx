@@ -34,17 +34,21 @@ export function RiskReportCard({ report }: RiskReportCardProps) {
     downloadAnchorNode.remove();
   };
 
-  const ProgressBar = ({ label, value }: { label: string, value: number }) => (
+  const ProgressBar = ({ label, value }: { label: string, value: number | null }) => (
     <div className="space-y-1.5">
       <div className="flex justify-between text-sm">
         <span className="text-zinc-400">{label}</span>
-        <span className="font-mono text-zinc-300">{value}%</span>
+        <span className={`font-mono ${value === null ? 'text-zinc-500 text-xs italic' : 'text-zinc-300'}`}>{value !== null ? `${value}%` : 'Insufficient Data'}</span>
       </div>
       <div className="h-1.5 w-full bg-zinc-900 rounded-full overflow-hidden">
-        <div 
-          className={`h-full rounded-full transition-all duration-1000 ${value >= 50 ? 'bg-emerald-500' : 'bg-orange-500'}`}
-          style={{ width: `${value}%` }}
-        />
+        {value !== null ? (
+          <div 
+            className={`h-full rounded-full transition-all duration-1000 ${value >= 50 ? 'bg-emerald-500' : 'bg-orange-500'}`}
+            style={{ width: `${value}%` }}
+          />
+        ) : (
+          <div className="h-full bg-zinc-800 rounded-full w-full" />
+        )}
       </div>
     </div>
   );
@@ -124,13 +128,14 @@ export function RiskReportCard({ report }: RiskReportCardProps) {
             <div className="text-xs font-mono text-zinc-500 uppercase tracking-widest mb-1">Intelligence Score</div>
             <div className="flex items-end gap-3">
               <div className={`text-6xl md:text-7xl font-black tracking-tighter leading-none ${
-                report.score >= 70 ? 'text-emerald-500' : report.score >= 40 ? 'text-orange-500' : 'text-red-500'
+                report.score === null ? 'text-zinc-500' : report.score >= 70 ? 'text-emerald-500' : report.score >= 40 ? 'text-orange-500' : 'text-red-500'
               }`}>
-                {report.score}
+                {report.score !== null ? report.score : 'N/A'}
               </div>
               <div className="flex flex-col pb-2">
                 <span className="text-sm text-zinc-500 font-medium">/100</span>
                 <span className={`text-xl font-bold ${
+                  report.grade === 'N/A' ? 'text-zinc-500' :
                   report.grade === 'A' || report.grade === 'B' ? 'text-emerald-500' : 
                   report.grade === 'C' ? 'text-orange-500' : 'text-red-500'
                 }`}>Grade {report.grade}</span>
@@ -156,10 +161,11 @@ export function RiskReportCard({ report }: RiskReportCardProps) {
         </div>
 
         {/* Confidence & Ecosystem Strip */}
+        {/* Confidence Strip */}
         <div className="grid grid-cols-1 md:grid-cols-2 border-t border-zinc-800 bg-zinc-900/50 print:bg-gray-50 print:border-gray-200">
           <div className="p-4 md:px-10 border-b md:border-b-0 md:border-r border-zinc-800 flex items-center justify-between">
             <span className="text-sm font-medium text-zinc-400 flex items-center gap-2 print:text-gray-600">
-              <Database className="h-4 w-4" /> Confidence Score
+              <Database className="h-4 w-4" /> Analysis Confidence
             </span>
             <div className="flex items-center gap-3">
               <span className="text-lg font-mono text-zinc-100 print:text-black">{report.confidence.score}%</span>
@@ -168,10 +174,29 @@ export function RiskReportCard({ report }: RiskReportCardProps) {
               </div>
             </div>
           </div>
-          <div className="p-4 md:px-10">
-            <p className="text-xs text-zinc-500 leading-snug print:text-gray-600">
+          <div className="p-4 md:px-10 flex flex-col justify-center">
+            <p className="text-xs text-zinc-500 leading-snug print:text-gray-600 mb-1">
               {report.confidence.reason}
             </p>
+            {report.lastUpdated && (
+              <p className="text-xs text-zinc-600">
+                Last Updated: {new Date(report.lastUpdated).toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Data Sources Strip */}
+        <div className="border-t border-zinc-800 bg-zinc-950 p-4 md:px-10">
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <span className="text-xs font-medium text-zinc-500 uppercase tracking-widest shrink-0">Data Sources:</span>
+            <div className="flex flex-wrap gap-2">
+              {report.dataSources?.map((source: string, i: number) => (
+                <span key={i} className="text-xs px-2 py-1 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 font-mono">
+                  ✓ {source}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </Card>
@@ -286,35 +311,37 @@ export function RiskReportCard({ report }: RiskReportCardProps) {
 
         <div className="space-y-6">
           {/* Pharos Ecosystem Intelligence */}
-          {report.ecosystemIntelligence && (
+          {/* Pharos Native Score Card */}
+          {report.pharosNativeScore !== undefined && (
             <Card className="bg-zinc-950 border-emerald-500/20 shadow-[0_0_15px_-3px_rgba(16,185,129,0.1)] rounded-xl print:bg-white print:border-emerald-200 print:shadow-none">
               <CardHeader className="border-b border-zinc-800/50 pb-4 bg-emerald-500/5 print:bg-emerald-50">
                 <CardTitle className="text-sm font-medium text-zinc-100 flex items-center gap-2 print:text-black">
                   <Network className="h-4 w-4 text-emerald-400" />
-                  Pharos Ecosystem Intelligence
+                  Pharos Native Intelligence
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-zinc-400 text-sm mb-1">Pharos Native Score</h3>
+                    <p className="text-xs text-zinc-500">Derived strictly from verifiable mainnet participation</p>
+                  </div>
+                  <div className={`text-4xl md:text-5xl font-black ${report.pharosNativeScore !== null ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                    {report.pharosNativeScore !== null ? `${report.pharosNativeScore}/100` : 'N/A'}
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="bg-zinc-900 rounded-lg p-3 border border-zinc-800/50 print:bg-white print:border-gray-200">
                     <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Total Interactions</div>
-                    <div className="text-xl font-bold text-zinc-100 print:text-black">{report.ecosystemIntelligence.pharosInteractions}</div>
+                    <div className="text-xl font-bold text-zinc-100 print:text-black">{report.ecosystemIntelligence?.pharosInteractions ?? 'Insufficient Data'}</div>
                   </div>
                   <div className="bg-zinc-900 rounded-lg p-3 border border-zinc-800/50 print:bg-white print:border-gray-200">
                     <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Unique Contracts</div>
-                    <div className="text-xl font-bold text-zinc-100 print:text-black">{report.ecosystemIntelligence.uniqueContracts}</div>
-                  </div>
-                  <div className="bg-zinc-900 rounded-lg p-3 border border-zinc-800/50 print:bg-white print:border-gray-200">
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Protocol Diversity</div>
-                    <div className="text-xl font-bold text-zinc-100 print:text-black">{report.ecosystemIntelligence.protocolDiversity}%</div>
-                  </div>
-                  <div className="bg-zinc-900 rounded-lg p-3 border border-zinc-800/50 print:bg-white print:border-gray-200">
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 mb-1">Ecosystem Score</div>
-                    <div className="text-xl font-bold text-emerald-400">{report.ecosystemIntelligence.ecosystemScore}/100</div>
+                    <div className="text-xl font-bold text-zinc-100 print:text-black">{report.ecosystemIntelligence?.uniqueContracts ?? 'Insufficient Data'}</div>
                   </div>
                 </div>
                 <p className="text-sm text-zinc-400 border-t border-zinc-800/50 pt-4 print:text-black print:border-gray-200">
-                  {report.ecosystemIntelligence.assessment}
+                  {report.ecosystemIntelligence?.assessment || 'Analysis based on available verifiable Pharos mainnet data.'}
                 </p>
               </CardContent>
             </Card>

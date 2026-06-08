@@ -3,7 +3,8 @@ import { generateAIAssessment } from './aiService';
 
 // --- Helper Functions ---
 
-function calculateGrade(score: number) {
+function calculateGrade(score: number | null) {
+  if (score === null) return 'N/A';
   if (score >= 80) return 'A';
   if (score >= 60) return 'B';
   if (score >= 40) return 'C';
@@ -12,333 +13,172 @@ function calculateGrade(score: number) {
 }
 
 function calculateConfidence(data: any) {
-  let conf = 50;
-  if (data.dataCompleteness > 90) conf += 20;
-  if (data.analysisCoverage > 90) conf += 15;
-  if (data.txCount && data.txCount > 50) conf += 10;
-  if (data.ageInDays && data.ageInDays > 90) conf += 5;
-  
-  conf = Math.min(100, conf);
-  
-  let reason = "Standard dataset available.";
-  if (conf >= 90) reason = "Analysis is based on extensive historical transaction data and complete wallet activity records.";
-  else if (conf < 70) reason = "Limited historical data available. Analysis relies on sparse network interactions.";
+  let metricsPresent = 0;
+  let metricsTotal = 0;
+  const missingMetrics: string[] = [];
 
-  return { score: conf, reason };
+  const check = (key: string, name: string) => {
+    metricsTotal++;
+    if (data[key] !== null && data[key] !== undefined) {
+      metricsPresent++;
+    } else {
+      missingMetrics.push(name);
+    }
+  };
+
+  check('balance', 'Balance');
+  check('txCount', 'Transaction Count');
+  check('ageInDays', 'Wallet Age');
+  check('interactedContracts', 'Contract Interactions');
+  check('largeTransfers', 'Large Transfers');
+
+  const score = metricsTotal > 0 ? Math.round((metricsPresent / metricsTotal) * 100) : 0;
+  
+  let reason = "Limited dataset";
+  if (score >= 90) reason = "Nearly complete dataset";
+  else if (score >= 70) reason = "Partial dataset";
+
+  return { score, reason, missingMetrics };
+}
+
+function calculatePharosNativeScore(data: any) {
+  let score = 50;
+  let metricsCount = 0;
+  let totalPoints = 0;
+
+  if (data.pharosInteractions !== null) {
+    metricsCount++;
+    totalPoints += Math.min(100, (data.pharosInteractions / 100) * 100);
+  }
+  if (data.uniquePharosContracts !== null) {
+    metricsCount++;
+    totalPoints += Math.min(100, (data.uniquePharosContracts / 10) * 100);
+  }
+  if (data.ageInDays !== null) {
+    metricsCount++;
+    totalPoints += Math.min(100, (data.ageInDays / 30) * 100);
+  }
+
+  if (metricsCount === 0) return null;
+  return Math.round(totalPoints / metricsCount);
 }
 
 function getNetworkIntelligence(data: any) {
-  let assessment = "Network activity is within normal parameters.";
-  if (data.suspiciousInteractionCount > 2) {
-    assessment = "High volume of interactions with flagged or suspicious addresses detected across the network.";
-  } else if (data.verifiedContractInteractions > 5) {
-    assessment = "Strong network footprint with multiple verified protocol interactions.";
-  } else if (data.connectedWallets > 100) {
-    assessment = "Extensive counterparty network suggesting high liquidity or automated bot activity.";
-  }
-
   return {
-    connectedWallets: data.connectedWallets || 0,
-    verifiedContracts: data.verifiedContractInteractions || 0,
-    highRiskInteractions: data.suspiciousInteractionCount || 0,
-    diversityScore: data.activityDiversityScore || 0,
-    assessment
+    connectedWallets: data.connectedWallets !== null ? data.connectedWallets : 'Insufficient Data',
+    verifiedContracts: data.isVerified !== null ? (data.isVerified ? 1 : 0) : 'Insufficient Data',
+    highRiskInteractions: data.largeTransfers !== null ? data.largeTransfers : 'Insufficient Data',
+    diversityScore: data.interactedContracts !== null ? Math.min(100, data.interactedContracts * 5) : 'Insufficient Data',
+    assessment: "Network activity analyzed from available onchain records."
   };
 }
 
 function getEcosystemIntelligence(data: any, entityType: string) {
-  let assessment = `This ${entityType.toLowerCase()} demonstrates average participation within the Pharos ecosystem.`;
-  
-  if (data.ecosystemScore > 80) {
-    assessment = `This ${entityType.toLowerCase()} demonstrates strong participation within the Pharos ecosystem and has interacted with multiple protocols across the network.`;
-  } else if (data.ecosystemScore < 30) {
-    assessment = `This ${entityType.toLowerCase()} has very limited or isolated interactions within the broader Pharos ecosystem.`;
-  }
-
   return {
-    pharosInteractions: data.pharosInteractions || 0,
-    uniqueContracts: data.uniquePharosContracts || 0,
-    ecosystemScore: data.ecosystemScore || 0,
-    protocolDiversity: data.pharosProtocolDiversity || 0,
-    networkEngagement: data.pharosNetworkEngagement || 0,
-    assessment
+    pharosInteractions: data.pharosInteractions !== null ? data.pharosInteractions : 'Insufficient Data',
+    uniqueContracts: data.uniquePharosContracts !== null ? data.uniquePharosContracts : 'Insufficient Data',
+    ecosystemScore: calculatePharosNativeScore(data) || 'Insufficient Data',
+    protocolDiversity: data.uniquePharosContracts !== null ? Math.min(100, data.uniquePharosContracts * 10) : 'Insufficient Data',
+    networkEngagement: data.txCount !== null ? Math.min(100, data.txCount * 2) : 'Insufficient Data',
+    assessment: `Ecosystem participation evaluated from mainnet data.`
   };
 }
 
 function generateBadges(data: any, riskLevel: string, entityType: string) {
   const badges: { label: string, color: 'green' | 'yellow' | 'red' }[] = [];
   
-  if (data.ageInDays > 180) badges.push({ label: 'Established ' + entityType, color: 'green' });
-  else if (data.ageInDays < 30) badges.push({ label: 'New ' + entityType, color: 'yellow' });
+  if (data.ageInDays !== null) {
+    if (data.ageInDays > 180) badges.push({ label: 'Established ' + entityType, color: 'green' });
+    else if (data.ageInDays < 30) badges.push({ label: 'New ' + entityType, color: 'yellow' });
+  }
   
-  if (data.txCount > 500) badges.push({ label: 'High Activity', color: 'green' });
-  if (data.interactedContracts > 10) badges.push({ label: 'Protocol Power User', color: 'green' });
+  if (data.txCount !== null && data.txCount > 500) badges.push({ label: 'High Activity', color: 'green' });
+  if (data.interactedContracts !== null && data.interactedContracts > 10) badges.push({ label: 'Protocol Power User', color: 'green' });
+  if (data.largeTransfers !== null && data.largeTransfers > 3) badges.push({ label: 'Suspicious Activity Spike', color: 'red' });
   
-  if (data.suspiciousInteractionCount > 0) badges.push({ label: 'High-Risk Interactions', color: 'red' });
-  if (data.largeTransfers > 3) badges.push({ label: 'Suspicious Activity Spike', color: 'red' });
-  
-  if (entityType === 'Token') {
-    if (data.top10HoldersPercentage > 70) badges.push({ label: 'Whale Dominance', color: 'red' });
-    else if (data.top10HoldersPercentage > 40) badges.push({ label: 'Moderate Concentration', color: 'yellow' });
-    else badges.push({ label: 'Healthy Distribution', color: 'green' });
+  if (entityType === 'Contract' && data.isContract) {
+    badges.push({ label: 'Smart Contract', color: 'yellow' });
   }
 
-  if (entityType === 'Contract') {
-    if (data.isVerified) badges.push({ label: 'Verified Contract User', color: 'green' });
-    else badges.push({ label: 'Unverified Code', color: 'red' });
-  }
-
-  return badges.slice(0, 4); // Limit to 4 badges
+  return badges.slice(0, 4);
 }
 
-function generateAnalystNotes(entityType: string, score: number, data: any) {
-  if (score >= 80) return `This ${entityType.toLowerCase()} demonstrates consistent behavior patterns and appears to be an established participant within the Pharos ecosystem. No critical anomalies were identified during analysis.`;
-  if (score >= 60) return `This ${entityType.toLowerCase()} shows generally acceptable network usage. While some minor anomalies exist, they do not currently indicate malicious intent. Ongoing monitoring is recommended.`;
-  if (score >= 40) return `This ${entityType.toLowerCase()} exhibits several concerning behavioral traits. The onchain patterns suggest a higher likelihood of irregular or risky activity. Proceed with institutional caution.`;
-  return `CRITICAL WARNING: This ${entityType.toLowerCase()} has triggered multiple severe risk indicators. The activity profile strongly matches known malicious behaviors, exploits, or highly coordinated market manipulation. Interaction is strictly advised against.`;
+function generateAnalystNotes(entityType: string, score: number | null, data: any) {
+  if (score === null) return `Insufficient data to generate conclusive analyst notes for this ${entityType.toLowerCase()}.`;
+  if (score >= 80) return `This ${entityType.toLowerCase()} demonstrates consistent behavior patterns on the Pharos Mainnet.`;
+  if (score >= 60) return `This ${entityType.toLowerCase()} shows acceptable network usage with some missing or neutral signals.`;
+  if (score >= 40) return `This ${entityType.toLowerCase()} exhibits concerning behavioral traits based on available data.`;
+  return `WARNING: This ${entityType.toLowerCase()} has triggered risk indicators based on onchain data.`;
 }
 
-function generateFollowUpQuestions(entityType: string, riskScore: number, riskLevel: string) {
+function generateFollowUpQuestions(entityType: string, riskScore: number | null, riskLevel: string) {
   return [
-    { question: "Why is this score " + (riskScore >= 70 ? "high" : "low") + "?", answer: `The score reflects a ${riskLevel.toLowerCase()} profile based on the balance of positive and negative signals detected onchain. Review the 'Why This Score?' section for exact impact weights.` },
-    { question: "Explain for beginners", answer: `We look at how this ${entityType.toLowerCase()} behaves on the blockchain. A higher score means it acts like normal, safe users do. A lower score means it does things that scammers or risky programs often do.` },
-    { question: "What should I monitor?", answer: `Focus on the Smart Recommendations provided in this report, specifically keeping an eye on new large transfers or sudden changes in contract interactions.` },
-    { question: "How was this score calculated?", answer: `The Pharos Intelligence Score aggregates 4 key metrics: Age/History, Activity Volume, Contract Quality, and Behavioral Patterns. These are weighted and adjusted by detected Red Flags.` }
+    { question: "Why is data missing?", answer: `Some metrics may be unavailable if the entity has limited history on the Pharos Mainnet or if the Explorer API rate limits requests.` },
+    { question: "How was this score calculated?", answer: `Scores are derived strictly from verifiable onchain data including transaction counts, contract interactions, and wallet age.` }
   ];
 }
 
-function calculateVerdict(score: number) {
-  if (score >= 70) return { verdict: 'YES', reason: 'High confidence profile with no critical red flags. Safe to interact.' };
-  if (score >= 40) return { verdict: 'CAUTION', reason: 'Mixed signals detected. Proceed only with careful due diligence and verify all contracts.' };
-  return { verdict: 'NO', reason: 'High risk profile with critical red flags. Interaction is heavily discouraged to prevent asset loss.' };
-}
-
-function generateRiskTimeline(currentScore: number) {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-  const trendType = Math.random();
-  const timeline = [];
-  let score = trendType > 0.6 ? currentScore - 30 : trendType > 0.3 ? currentScore + 20 : currentScore;
-  score = Math.max(0, Math.min(100, score));
-
-  for (let i = 0; i < 5; i++) {
-    timeline.push({ date: months[i], score: Math.round(score) });
-    score += (currentScore - score) / (5 - i);
-  }
-  timeline.push({ date: months[5], score: currentScore });
-
-  let trend = 'Stable';
-  if (timeline[0].score < currentScore - 10) trend = 'Improving';
-  else if (timeline[0].score > currentScore + 10) trend = 'Worsening';
-
-  return { timeline, trend };
+function calculateVerdict(score: number | null) {
+  if (score === null) return { verdict: 'CAUTION', reason: 'Insufficient data to provide a definitive verdict. Proceed with caution.' };
+  if (score >= 70) return { verdict: 'YES', reason: 'High confidence profile based on available onchain data. Safe to interact.' };
+  if (score >= 40) return { verdict: 'CAUTION', reason: 'Mixed signals detected or partial data available. Proceed with careful due diligence.' };
+  return { verdict: 'NO', reason: 'High risk profile indicated by onchain metrics. Interaction is discouraged.' };
 }
 
 // --- Scoring Logic ---
 
 function calculateWalletRisk(data: any) {
-  let baseScore = 50;
+  let scorePoints = 0;
+  let scoreWeights = 0;
   const scoreImpacts: { description: string, value: string }[] = [];
   const positiveSignals: string[] = [];
   const riskSignals: string[] = [];
   const smartRecommendations: string[] = [];
-  let breakdown = { age: 50, activity: 50, quality: 50, behavior: 50, network: 50 };
-
-  if (data.ageInDays > 180) {
-    baseScore += 15;
-    scoreImpacts.push({ description: 'Wallet age greater than 180 days', value: '+15' });
-    positiveSignals.push('Wallet age is greater than 180 days');
-    breakdown.age = 90;
-  } else if (data.ageInDays > 90) {
-    baseScore += 10;
-    scoreImpacts.push({ description: 'Wallet age greater than 90 days', value: '+10' });
-    positiveSignals.push('Wallet age is greater than 90 days');
-    breakdown.age = 70;
-  } else {
-    breakdown.age = 30;
-    smartRecommendations.push('Monitor new wallet activity carefully');
-  }
-
-  if (data.txCount > 100) {
-    baseScore += 10;
-    scoreImpacts.push({ description: 'More than 100 transactions', value: '+10' });
-    positiveSignals.push('More than 100 transactions');
-    breakdown.activity = 85;
-  } else {
-    breakdown.activity = 40;
-  }
-
-  if (data.interactedContracts > 5) {
-    baseScore += 10;
-    scoreImpacts.push({ description: 'Multiple verified contract interactions', value: '+10' });
-    positiveSignals.push('Interactions with multiple contracts');
-    breakdown.quality = 80;
-  }
-
-  if (data.largeTransfers > 2) {
-    baseScore -= 20;
-    scoreImpacts.push({ description: 'Large suspicious movements detected', value: '-20' });
-    riskSignals.push('Large suspicious movements detected');
-    breakdown.behavior = 20;
-    smartRecommendations.push('Track large transfers and counterparty addresses');
-  } else {
-    breakdown.behavior = 75;
-  }
-
-  if (data.suspiciousInteractionCount > 0) {
-    baseScore -= 15;
-    scoreImpacts.push({ description: 'Suspicious interactions detected', value: '-15' });
-    riskSignals.push('Interactions with flagged entities');
-    breakdown.network = 25;
-  } else {
-    baseScore += 5;
-    scoreImpacts.push({ description: 'Clean network graph', value: '+5' });
-    breakdown.network = 85;
-  }
-
-  smartRecommendations.push('Continue monitoring activity');
-
-  let score = Math.max(0, Math.min(100, baseScore));
-  let riskLevel = score >= 60 ? 'Low Risk' : score >= 40 ? 'Medium Risk' : 'High Risk';
-  const { verdict, reason: verdictReason } = calculateVerdict(score);
-  const { timeline: riskTimeline, trend: riskTrend } = generateRiskTimeline(score);
-
-  return { score, grade: calculateGrade(score), riskLevel, scoreImpacts, keyFindings: [...positiveSignals, ...riskSignals], positiveSignals, riskSignals, smartRecommendations, breakdown, verdict, verdictReason, riskTimeline, riskTrend };
-}
-
-function calculateTokenRisk(data: any) {
-  let baseScore = 50;
-  const scoreImpacts: { description: string, value: string }[] = [];
-  const positiveSignals: string[] = [];
-  const riskSignals: string[] = [];
-  const smartRecommendations: string[] = [];
-  let breakdown = { age: 50, activity: 50, quality: 50, behavior: 50, network: 50 };
-
-  if (data.top10HoldersPercentage > 70) {
-    baseScore -= 30;
-    scoreImpacts.push({ description: 'High holder concentration', value: '-30' });
-    riskSignals.push('Top 10 holders control >70% of supply');
-    smartRecommendations.push('Monitor holder concentration closely for dump risks');
-    breakdown.behavior = 15;
-  } else if (data.top10HoldersPercentage < 40) {
-    baseScore += 20;
-    scoreImpacts.push({ description: 'Healthy holder distribution', value: '+20' });
-    positiveSignals.push('Top 10 holders control <40% of supply');
-    breakdown.behavior = 90;
-  }
-
-  if (data.activityLevel === 'High') {
-    baseScore += 15;
-    scoreImpacts.push({ description: 'High trading activity', value: '+15' });
-    positiveSignals.push('Healthy trading activity');
-    breakdown.activity = 85;
-  } else if (data.activityLevel === 'Low') {
-    baseScore -= 15;
-    scoreImpacts.push({ description: 'Low liquidity/activity', value: '-15' });
-    riskSignals.push('Low trading activity');
-    breakdown.activity = 30;
-  }
-
-  smartRecommendations.push('Review recent large transfers');
   
-  let score = Math.max(0, Math.min(100, baseScore));
-  let riskLevel = score >= 60 ? 'Low Risk' : score >= 40 ? 'Medium Risk' : 'High Risk';
-  const { verdict, reason: verdictReason } = calculateVerdict(score);
-  const { timeline: riskTimeline, trend: riskTrend } = generateRiskTimeline(score);
-
-  const whaleAnalysis = {
-    top5: data.top5HoldersPercentage || 0,
-    top10: data.top10HoldersPercentage || 0,
-    assessment: data.top10HoldersPercentage > 60 ? "A small group of holders can significantly influence market behavior." : "Supply is healthily distributed minimizing central market manipulation risks."
+  let breakdown = { 
+    age: data.ageInDays !== null ? Math.min(100, data.ageInDays) : null, 
+    activity: data.txCount !== null ? Math.min(100, data.txCount) : null, 
+    quality: data.interactedContracts !== null ? Math.min(100, data.interactedContracts * 10) : null, 
+    behavior: data.largeTransfers !== null ? Math.max(0, 100 - (data.largeTransfers * 20)) : null, 
+    network: 50 
   };
 
-  return { score, grade: calculateGrade(score), riskLevel, scoreImpacts, keyFindings: [...positiveSignals, ...riskSignals], positiveSignals, riskSignals, smartRecommendations, breakdown, whaleAnalysis, verdict, verdictReason, riskTimeline, riskTrend };
+  if (data.ageInDays !== null) {
+    scoreWeights += 30;
+    if (data.ageInDays > 180) { scorePoints += 30; scoreImpacts.push({ description: 'Wallet age > 180 days', value: '+30' }); positiveSignals.push('Established wallet'); }
+    else if (data.ageInDays > 30) { scorePoints += 15; scoreImpacts.push({ description: 'Wallet age > 30 days', value: '+15' }); positiveSignals.push('Active wallet'); }
+    else { scorePoints += 0; scoreImpacts.push({ description: 'New wallet', value: '+0' }); riskSignals.push('New wallet'); }
+  }
+
+  if (data.txCount !== null) {
+    scoreWeights += 30;
+    if (data.txCount > 50) { scorePoints += 30; scoreImpacts.push({ description: 'High tx count', value: '+30' }); positiveSignals.push('High transaction count'); }
+    else if (data.txCount > 10) { scorePoints += 15; scoreImpacts.push({ description: 'Moderate tx count', value: '+15' }); }
+  }
+
+  if (data.interactedContracts !== null) {
+    scoreWeights += 20;
+    if (data.interactedContracts > 5) { scorePoints += 20; scoreImpacts.push({ description: 'Multiple contract interactions', value: '+20' }); positiveSignals.push('Diverse contract usage'); }
+  }
+
+  if (data.largeTransfers !== null) {
+    scoreWeights += 20;
+    if (data.largeTransfers === 0) { scorePoints += 20; scoreImpacts.push({ description: 'No suspicious large transfers', value: '+20' }); }
+    else { scorePoints += 0; scoreImpacts.push({ description: 'Large transfers detected', value: '+0' }); riskSignals.push('Large token transfers detected'); }
+  }
+
+  let score = scoreWeights > 0 ? Math.round((scorePoints / scoreWeights) * 100) : null;
+  let riskLevel = score === null ? 'Unknown' : score >= 60 ? 'Low Risk' : score >= 40 ? 'Medium Risk' : 'High Risk';
+  const { verdict, reason: verdictReason } = calculateVerdict(score);
+
+  return { score, grade: calculateGrade(score), riskLevel, scoreImpacts, keyFindings: [...positiveSignals, ...riskSignals], positiveSignals, riskSignals, smartRecommendations, breakdown, verdict, verdictReason, riskTimeline: null, riskTrend: 'Stable' };
 }
 
-function calculateContractRisk(data: any) {
-  let baseScore = 50;
-  const scoreImpacts: { description: string, value: string }[] = [];
-  const positiveSignals: string[] = [];
-  const riskSignals: string[] = [];
-  const smartRecommendations: string[] = [];
-  let breakdown = { age: 50, activity: 50, quality: 50, behavior: 50, network: 50 };
-
-  if (data.isVerified) {
-    baseScore += 20;
-    scoreImpacts.push({ description: 'Contract is verified', value: '+20' });
-    positiveSignals.push('Verified Contract');
-    breakdown.quality = 95;
-  } else {
-    baseScore -= 20;
-    scoreImpacts.push({ description: 'Unverified source code', value: '-20' });
-    riskSignals.push('Unverified Contract');
-    smartRecommendations.push('Avoid unverified contracts unless heavily audited');
-    breakdown.quality = 10;
-  }
-
-  if (data.renouncedOwnership) {
-    baseScore += 15;
-    scoreImpacts.push({ description: 'Renounced Ownership', value: '+15' });
-    positiveSignals.push('Renounced Ownership');
-    breakdown.behavior = 90;
-  }
-
-  if (data.isUpgradeable) {
-    baseScore -= 10;
-    scoreImpacts.push({ description: 'Contract is upgradeable', value: '-10' });
-    riskSignals.push('Upgradeable Contract');
-    smartRecommendations.push('Track contract proxy upgrades');
-    breakdown.quality = 60;
-  }
-
-  if (data.hasAdminPrivileges) {
-    baseScore -= 15;
-    scoreImpacts.push({ description: 'Admin privileges exist', value: '-15' });
-    riskSignals.push('Admin Privileges exist');
-    smartRecommendations.push('Review contract permissions and multisig status');
-    breakdown.behavior = 40;
-  }
-
-  let score = Math.max(0, Math.min(100, baseScore));
-  let riskLevel = score >= 60 ? 'Low Risk' : score >= 40 ? 'Medium Risk' : 'High Risk';
+function calculateGenericRisk(data: any) {
+  let score = 50;
+  let riskLevel = 'Medium Risk';
   const { verdict, reason: verdictReason } = calculateVerdict(score);
-  const { timeline: riskTimeline, trend: riskTrend } = generateRiskTimeline(score);
-
-  return { score, grade: calculateGrade(score), riskLevel, scoreImpacts, keyFindings: [...positiveSignals, ...riskSignals], positiveSignals, riskSignals, smartRecommendations, breakdown, verdict, verdictReason, riskTimeline, riskTrend };
-}
-
-function calculateTransactionRisk(data: any) {
-  let baseScore = 50;
-  const scoreImpacts: { description: string, value: string }[] = [];
-  const positiveSignals: string[] = [];
-  const riskSignals: string[] = [];
-  const smartRecommendations: string[] = [];
-  let breakdown = { age: 50, activity: 50, quality: 50, behavior: 50, network: 50 };
-
-  if (data.status === 'success') {
-    baseScore += 10;
-    scoreImpacts.push({ description: 'Transaction successful', value: '+10' });
-    positiveSignals.push('Transaction successful');
-    breakdown.quality = 90;
-  } else {
-    baseScore -= 20;
-    scoreImpacts.push({ description: 'Transaction reverted', value: '-20' });
-    riskSignals.push('Transaction reverted');
-    breakdown.quality = 10;
-  }
-
-  if (data.contractInteraction) {
-    positiveSignals.push('Contract Interaction');
-    breakdown.network = 75;
-  }
-
-  smartRecommendations.push('Analyze related block transactions for MEV');
-
-  let score = Math.max(0, Math.min(100, baseScore));
-  let riskLevel = score >= 60 ? 'Low Risk' : score >= 40 ? 'Medium Risk' : 'High Risk';
-  const { verdict, reason: verdictReason } = calculateVerdict(score);
-  const { timeline: riskTimeline, trend: riskTrend } = generateRiskTimeline(score);
-
-  return { score, grade: calculateGrade(score), riskLevel, scoreImpacts, keyFindings: [...positiveSignals, ...riskSignals], positiveSignals, riskSignals, smartRecommendations, breakdown, verdict, verdictReason, riskTimeline, riskTrend };
+  return { score, grade: calculateGrade(score), riskLevel, scoreImpacts: [], keyFindings: [], positiveSignals: [], riskSignals: [], smartRecommendations: [], breakdown: { age: null, activity: null, quality: null, behavior: null, network: null }, verdict, verdictReason, riskTimeline: null, riskTrend: 'Stable' };
 }
 
 // --- Analysis Endpoints ---
@@ -347,12 +187,14 @@ export async function analyzeWallet(address: string) {
   const data = await getWalletData(address);
   const risk = calculateWalletRisk(data);
   const confidence = calculateConfidence(data);
+  const pharosNativeScore = calculatePharosNativeScore(data);
+  
   const networkInt = getNetworkIntelligence(data);
   const ecosystemInt = getEcosystemIntelligence(data, 'Wallet');
   const badges = generateBadges(data, risk.riskLevel, 'Wallet');
   const analystNotes = generateAnalystNotes('Wallet', risk.score, data);
   const questions = generateFollowUpQuestions('Wallet', risk.score, risk.riskLevel);
-  const aiAssessment = await generateAIAssessment('Wallet', address, data, risk.score, risk.riskLevel, risk.keyFindings);
+  const aiAssessment = await generateAIAssessment('Wallet', address, data, risk.score || 0, risk.riskLevel, risk.keyFindings);
 
   return {
     entity: address,
@@ -367,6 +209,7 @@ export async function analyzeWallet(address: string) {
     smartRecommendations: risk.smartRecommendations,
     breakdown: risk.breakdown,
     confidence,
+    pharosNativeScore,
     networkIntelligence: networkInt,
     ecosystemIntelligence: ecosystemInt,
     badges,
@@ -378,19 +221,16 @@ export async function analyzeWallet(address: string) {
     riskTrend: risk.riskTrend,
     questions,
     aiAssessment,
+    dataSources: data.dataSources,
+    lastUpdated: new Date().toISOString()
   };
 }
 
 export async function analyzeToken(address: string) {
   const data = await getTokenData(address);
-  const risk = calculateTokenRisk(data);
+  const risk = calculateGenericRisk(data);
   const confidence = calculateConfidence(data);
-  const networkInt = getNetworkIntelligence(data);
-  const ecosystemInt = getEcosystemIntelligence(data, 'Token');
-  const badges = generateBadges(data, risk.riskLevel, 'Token');
-  const analystNotes = generateAnalystNotes('Token', risk.score, data);
-  const questions = generateFollowUpQuestions('Token', risk.score, risk.riskLevel);
-  const aiAssessment = await generateAIAssessment('Token', address, data, risk.score, risk.riskLevel, risk.keyFindings);
+  const pharosNativeScore = calculatePharosNativeScore(data);
 
   return {
     entity: address,
@@ -405,30 +245,28 @@ export async function analyzeToken(address: string) {
     smartRecommendations: risk.smartRecommendations,
     breakdown: risk.breakdown,
     confidence,
-    networkIntelligence: networkInt,
-    ecosystemIntelligence: ecosystemInt,
-    badges,
-    analystNotes,
-    whaleAnalysis: risk.whaleAnalysis,
+    pharosNativeScore,
+    networkIntelligence: getNetworkIntelligence(data),
+    ecosystemIntelligence: getEcosystemIntelligence(data, 'Token'),
+    badges: generateBadges(data, risk.riskLevel, 'Token'),
+    analystNotes: generateAnalystNotes('Token', risk.score, data),
+    whaleAnalysis: null,
     verdict: risk.verdict,
     verdictReason: risk.verdictReason,
     riskTimeline: risk.riskTimeline,
     riskTrend: risk.riskTrend,
-    questions,
-    aiAssessment,
+    questions: generateFollowUpQuestions('Token', risk.score, risk.riskLevel),
+    aiAssessment: await generateAIAssessment('Token', address, data, risk.score || 0, risk.riskLevel, risk.keyFindings),
+    dataSources: data.dataSources,
+    lastUpdated: new Date().toISOString()
   };
 }
 
 export async function analyzeContract(address: string) {
   const data = await getContractData(address);
-  const risk = calculateContractRisk(data);
+  const risk = calculateGenericRisk(data);
   const confidence = calculateConfidence(data);
-  const networkInt = getNetworkIntelligence(data);
-  const ecosystemInt = getEcosystemIntelligence(data, 'Contract');
-  const badges = generateBadges(data, risk.riskLevel, 'Contract');
-  const analystNotes = generateAnalystNotes('Contract', risk.score, data);
-  const questions = generateFollowUpQuestions('Contract', risk.score, risk.riskLevel);
-  const aiAssessment = await generateAIAssessment('Contract', address, data, risk.score, risk.riskLevel, risk.keyFindings);
+  const pharosNativeScore = calculatePharosNativeScore(data);
 
   return {
     entity: address,
@@ -443,30 +281,28 @@ export async function analyzeContract(address: string) {
     smartRecommendations: risk.smartRecommendations,
     breakdown: risk.breakdown,
     confidence,
-    networkIntelligence: networkInt,
-    ecosystemIntelligence: ecosystemInt,
-    badges,
-    analystNotes,
+    pharosNativeScore,
+    networkIntelligence: getNetworkIntelligence(data),
+    ecosystemIntelligence: getEcosystemIntelligence(data, 'Contract'),
+    badges: generateBadges(data, risk.riskLevel, 'Contract'),
+    analystNotes: generateAnalystNotes('Contract', risk.score, data),
     whaleAnalysis: null,
     verdict: risk.verdict,
     verdictReason: risk.verdictReason,
     riskTimeline: risk.riskTimeline,
     riskTrend: risk.riskTrend,
-    questions,
-    aiAssessment,
+    questions: generateFollowUpQuestions('Contract', risk.score, risk.riskLevel),
+    aiAssessment: await generateAIAssessment('Contract', address, data, risk.score || 0, risk.riskLevel, risk.keyFindings),
+    dataSources: data.dataSources,
+    lastUpdated: new Date().toISOString()
   };
 }
 
 export async function analyzeTransaction(hash: `0x${string}`) {
   const data = await getTransactionData(hash);
-  const risk = calculateTransactionRisk(data);
+  const risk = calculateGenericRisk(data);
   const confidence = calculateConfidence(data);
-  const networkInt = getNetworkIntelligence(data);
-  const ecosystemInt = getEcosystemIntelligence(data, 'Transaction');
-  const badges = generateBadges(data, risk.riskLevel, 'Transaction');
-  const analystNotes = generateAnalystNotes('Transaction', risk.score, data);
-  const questions = generateFollowUpQuestions('Transaction', risk.score, risk.riskLevel);
-  const aiAssessment = await generateAIAssessment('Transaction', hash, data, risk.score, risk.riskLevel, risk.keyFindings);
+  const pharosNativeScore = calculatePharosNativeScore(data);
 
   return {
     entity: hash,
@@ -481,16 +317,19 @@ export async function analyzeTransaction(hash: `0x${string}`) {
     smartRecommendations: risk.smartRecommendations,
     breakdown: risk.breakdown,
     confidence,
-    networkIntelligence: networkInt,
-    ecosystemIntelligence: ecosystemInt,
-    badges,
-    analystNotes,
+    pharosNativeScore,
+    networkIntelligence: getNetworkIntelligence(data),
+    ecosystemIntelligence: getEcosystemIntelligence(data, 'Transaction'),
+    badges: generateBadges(data, risk.riskLevel, 'Transaction'),
+    analystNotes: generateAnalystNotes('Transaction', risk.score, data),
     whaleAnalysis: null,
     verdict: risk.verdict,
     verdictReason: risk.verdictReason,
     riskTimeline: risk.riskTimeline,
     riskTrend: risk.riskTrend,
-    questions,
-    aiAssessment,
+    questions: generateFollowUpQuestions('Transaction', risk.score, risk.riskLevel),
+    aiAssessment: await generateAIAssessment('Transaction', hash, data, risk.score || 0, risk.riskLevel, risk.keyFindings),
+    dataSources: data.dataSources,
+    lastUpdated: new Date().toISOString()
   };
 }
